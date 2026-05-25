@@ -65,11 +65,15 @@ Equipe iMonitor
     msg['Subject'] = assunto
     msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
     
-    server = smtplib.SMTP('smtp.gmail.com', 587)
-    server.starttls()
-    server.login(remetente, senha)
-    server.send_message(msg)
-    server.quit()
+    try:
+        # Usando SMTP_SSL (Porta 465) que costuma ser mais estável em servidores Cloud que bloqueiam a 587/IPv6
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
+        server.login(remetente, senha)
+        server.send_message(msg)
+        server.quit()
+        print(f"[E-MAIL] Licença enviada com sucesso para {email_destino}")
+    except Exception as e:
+        print(f"[ERRO E-MAIL] {e}")
 
 class VerifyRequest(BaseModel):
     license_key: str
