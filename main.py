@@ -57,15 +57,23 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         session = event.get("data", {}).get("object", {})
         
         email_cliente = session.get("customer_details", {}).get("email", "cliente@desconhecido.com")
+        valor_pago = session.get("amount_total", 0) # Valor em centavos (ex: 39990 = R$ 399,90)
         
+        # Define os dias de validade com base no valor pago
+        dias = 30 # Padrão: Mensal
+        if valor_pago >= 39900:    # R$ 399,00 ou mais (Anual)
+            dias = 365
+        elif valor_pago >= 19900:  # R$ 199,00 a R$ 398,00 (Semestral)
+            dias = 180
+            
         # Gera uma nova chave
         nova_chave = gerar_chave()
         
-        # Salva no banco de dados (Licença de 30 dias por padrão)
+        # Salva no banco de dados
         db_license = models.License(
             license_key=nova_chave,
             email_cliente=email_cliente,
-            dias_validade=30 # Pode ser lido dos metadados do produto no Stripe
+            dias_validade=dias
         )
         db.add(db_license)
         db.commit()
