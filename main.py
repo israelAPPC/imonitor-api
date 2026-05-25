@@ -69,9 +69,8 @@ Equipe iMonitor
     msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
     
     try:
-        # Usando o servidor do Brevo na porta 587 (ou 2525)
-        # O TLS do Brevo é extremamente amigável com serviços Cloud
-        server = smtplib.SMTP('smtp-relay.brevo.com', 587)
+        # Usando o servidor do Brevo na porta 2525 para ignorar o Firewall do Render
+        server = smtplib.SMTP('smtp-relay.brevo.com', 2525)
         server.starttls()
         server.login(smtp_login, smtp_senha)
         server.send_message(msg)
