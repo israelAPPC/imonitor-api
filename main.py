@@ -66,11 +66,25 @@ Equipe iMonitor
     msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
     
     try:
-        # Usando SMTP_SSL (Porta 465) que costuma ser mais estável em servidores Cloud que bloqueiam a 587/IPv6
+        import socket
+        # PATCH PARA O RENDER: Forçar o uso de IPv4
+        # O Render não suporta IPv6 de saída no plano gratuito, o que causa o "Network is unreachable"
+        # quando o Python tenta se conectar no IPv6 do Gmail.
+        old_getaddrinfo = socket.getaddrinfo
+        def new_getaddrinfo(*args, **kwargs):
+            responses = old_getaddrinfo(*args, **kwargs)
+            return [response for response in responses if response[0] == socket.AF_INET]
+        socket.getaddrinfo = new_getaddrinfo
+
+        # Usando SMTP_SSL (Porta 465)
         server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
         server.login(remetente, senha)
         server.send_message(msg)
         server.quit()
+        
+        # Restaurar o socket original por segurança
+        socket.getaddrinfo = old_getaddrinfo
+        
         print(f"[E-MAIL] Licença enviada com sucesso para {email_destino}")
     except Exception as e:
         print(f"[ERRO E-MAIL] {e}")
