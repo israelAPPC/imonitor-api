@@ -1,0 +1,15 @@
+from sqlalchemy import Column, Integer, String, Boolean, DateTime
+from datetime import datetime
+from database import Base
+
+class License(Base):
+    __tablename__ = "licenses"
+
+    id = Column(Integer, primary_key=True, index=True)
+    license_key = Column(String, unique=True, index=True)
+    cnpj = Column(String, index=True, nullable=True) # Ficará em branco até a primeira ativação
+    email_cliente = Column(String, index=True) # E-mail do pagador
+    data_criacao = Column(DateTime, default=datetime.utcnow)
+    data_expiracao = Column(DateTime, nullable=True) # Será calculada na primeira ativação ou já na geração
+    is_active = Column(Boolean, default=True)
+    dias_validade = Column(Integer, default=30) # Quantos dias vale essa licença
