@@ -32,7 +32,10 @@ def gerar_chave():
 def enviar_email_licenca(email_destino: str, chave: str, dias: int):
     """Envia a chave de licença para o e-mail do cliente via Gmail."""
     remetente = "imonitordfe@gmail.com"
-    senha = "blif qozo ifdy xbwb"
+    
+    # Credenciais do Brevo
+    smtp_login = "ac7d8b001@smtp-brevo.com"
+    smtp_senha = "xsmtpsib-8047c857994e7fb77d9b39fe1801e642f1b637f485135ffed64c0cc307235117-wDAmhWlxKZUWjGrR"
     
     if email_destino == "cliente@desconhecido.com":
         return
@@ -66,24 +69,13 @@ Equipe iMonitor
     msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
     
     try:
-        import socket
-        # PATCH PARA O RENDER: Forçar o uso de IPv4
-        # O Render não suporta IPv6 de saída no plano gratuito, o que causa o "Network is unreachable"
-        # quando o Python tenta se conectar no IPv6 do Gmail.
-        old_getaddrinfo = socket.getaddrinfo
-        def new_getaddrinfo(*args, **kwargs):
-            responses = old_getaddrinfo(*args, **kwargs)
-            return [response for response in responses if response[0] == socket.AF_INET]
-        socket.getaddrinfo = new_getaddrinfo
-
-        # Usando SMTP_SSL (Porta 465)
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465)
-        server.login(remetente, senha)
+        # Usando o servidor do Brevo na porta 587 (ou 2525)
+        # O TLS do Brevo é extremamente amigável com serviços Cloud
+        server = smtplib.SMTP('smtp-relay.brevo.com', 587)
+        server.starttls()
+        server.login(smtp_login, smtp_senha)
         server.send_message(msg)
         server.quit()
-        
-        # Restaurar o socket original por segurança
-        socket.getaddrinfo = old_getaddrinfo
         
         print(f"[E-MAIL] Licença enviada com sucesso para {email_destino}")
     except Exception as e:
