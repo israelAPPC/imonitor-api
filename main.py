@@ -4,6 +4,9 @@ import string
 import stripe
 from datetime import datetime, timedelta
 from fastapi import FastAPI, Depends, HTTPException, Request, Response
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
 from sqlalchemy.orm import Session
 
 import models
@@ -25,6 +28,48 @@ def gerar_chave():
     """Gera uma chave aleatória no formato XXXX-XXXX-XXXX"""
     parts = [''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3)]
     return f"IMONITOR-{'-'.join(parts)}"
+
+def enviar_email_licenca(email_destino: str, chave: str, dias: int):
+    """Envia a chave de licença para o e-mail do cliente via Gmail."""
+    remetente = "imonitordfe@gmail.com"
+    senha = "blif qozo ifdy xbwb"
+    
+    if email_destino == "cliente@desconhecido.com":
+        return
+        
+    assunto = "Sua Licença do iMonitor Chegou! 🎉"
+    
+    plano_nome = "Mensal"
+    if dias == 365: plano_nome = "Anual"
+    elif dias == 180: plano_nome = "Semestral"
+    
+    corpo = f"""Olá!
+
+Obrigado por adquirir o iMonitor. Sua assinatura do Plano {plano_nome} foi confirmada com sucesso!
+
+Aqui está a sua Chave de Licença ({dias} dias):
+{chave}
+
+COMO ATIVAR:
+1. Abra o aplicativo iMonitor no seu computador.
+2. Na tela de bloqueio, insira o seu CNPJ.
+3. Cole a chave de licença acima e clique em "Ativar Licença".
+
+Qualquer dúvida, estamos à disposição.
+Equipe iMonitor
+"""
+    
+    msg = MIMEMultipart()
+    msg['From'] = remetente
+    msg['To'] = email_destino
+    msg['Subject'] = assunto
+    msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
+    
+    server = smtplib.SMTP('smtp.gmail.com', 587)
+    server.starttls()
+    server.login(remetente, senha)
+    server.send_message(msg)
+    server.quit()
 
 class VerifyRequest(BaseModel):
     license_key: str
@@ -79,7 +124,12 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         db.commit()
         db.refresh(db_license)
         
-        # AQUI entraria o código para disparar o e-mail pro cliente com a 'nova_chave'
+        # Disparar e-mail para o cliente
+        try:
+            enviar_email_licenca(email_cliente, nova_chave, dias)
+        except Exception as e:
+            print(f"Erro ao disparar e-mail: {e}")
+            
         print(f"[SUCESSO] Nova licenca gerada: {nova_chave} para {email_cliente}")
 
     return Response(status_code=200)
