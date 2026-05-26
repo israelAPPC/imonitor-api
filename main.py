@@ -113,6 +113,21 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         email_cliente = session.get("customer_details", {}).get("email", "cliente@desconhecido.com")
         valor_pago = session.get("amount_total", 0) # Valor em centavos (ex: 39990 = R$ 399,90)
         
+        # Extrair dados de contato / custom fields do Stripe
+        nome_empresa = session.get("customer_details", {}).get("name", "")
+        telefone = session.get("customer_details", {}).get("phone", "")
+        cnpj_stripe = ""
+        
+        for field in session.get("custom_fields", []):
+            label = field.get("label", {}).get("custom", "").lower()
+            val = field.get("text", {}).get("value", "")
+            if "cnpj" in label:
+                cnpj_stripe = ''.join(filter(str.isdigit, val))
+            elif "nome" in label or "empresa" in label:
+                nome_empresa = val
+            elif "telefone" in label or "celular" in label:
+                telefone = val
+                
         # Define os dias de validade com base no valor pago
         dias = 30 # Padrão: Mensal
         if valor_pago >= 39900:    # R$ 399,00 ou mais (Anual)
@@ -127,7 +142,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         db_license = models.License(
             license_key=nova_chave,
             email_cliente=email_cliente,
-            dias_validade=dias
+            dias_validade=dias,
+            cnpj=cnpj_stripe if cnpj_stripe else None,
+            nome_empresa=nome_empresa if nome_empresa else None,
+            telefone=telefone if telefone else None
         )
         db.add(db_license)
         db.commit()

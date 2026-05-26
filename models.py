@@ -8,6 +8,8 @@ class License(Base):
     id = Column(Integer, primary_key=True, index=True)
     license_key = Column(String, unique=True, index=True)
     cnpj = Column(String, index=True, nullable=True) # Ficará em branco até a primeira ativação
+    nome_empresa = Column(String, nullable=True) # Recebido do Stripe
+    telefone = Column(String, nullable=True) # Recebido do Stripe
     email_cliente = Column(String, index=True) # E-mail do pagador
     data_criacao = Column(DateTime, default=datetime.utcnow)
     data_expiracao = Column(DateTime, nullable=True) # Será calculada na primeira ativação ou já na geração
