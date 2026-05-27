@@ -45,6 +45,7 @@ def enviar_email_licenca(email_destino: str, chave: str, dias: int):
     plano_nome = "Mensal"
     if dias == 365: plano_nome = "Anual"
     elif dias == 180: plano_nome = "Semestral"
+    elif dias == 90: plano_nome = "Trimestral"
     
     corpo = f"""Olá!
 
