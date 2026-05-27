@@ -84,6 +84,9 @@ class VerifyRequest(BaseModel):
     license_key: str
     cnpj: str
 
+class TrialRequest(BaseModel):
+    cnpj: str
+
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "iMonitor API is running"}
@@ -198,3 +201,23 @@ def verify_license(req: VerifyRequest, db: Session = Depends(get_db)):
         "valid_until": db_license.data_expiracao.strftime("%Y-%m-%d"),
         "cnpj": db_license.cnpj
     }
+
+@app.post("/register_trial")
+def register_trial(req: TrialRequest, db: Session = Depends(get_db)):
+    """Endpoint para registrar que um CNPJ usou o trial."""
+    cnpj_limpo = ''.join(filter(str.isdigit, req.cnpj))
+    
+    if not cnpj_limpo:
+        raise HTTPException(status_code=400, detail="CNPJ inválido.")
+        
+    db_trial = db.query(models.TrialCompany).filter(models.TrialCompany.cnpj == cnpj_limpo).first()
+    
+    if db_trial:
+        raise HTTPException(status_code=403, detail="Este CNPJ já utilizou o período de testes.")
+        
+    # Se não existe, cria
+    novo_trial = models.TrialCompany(cnpj=cnpj_limpo)
+    db.add(novo_trial)
+    db.commit()
+    
+    return {"status": "success", "message": "CNPJ registrado para período de teste."}
