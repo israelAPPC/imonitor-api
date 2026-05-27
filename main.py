@@ -131,12 +131,23 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             elif "telefone" in label or "celular" in label:
                 telefone = val
                 
-        # Define os dias de validade com base no valor pago
-        dias = 30 # Padrão: Mensal
-        if valor_pago >= 39900:    # R$ 399,00 ou mais (Anual)
+        # Define limite e dias de validade com base no valor pago
+        dias = 30
+        limite = 5
+        
+        # Planos de 15 empresas
+        if valor_pago in [5990, 11990, 24990, 49990]:
+            limite = 15
+            
+        # Dias de validade
+        if valor_pago in [39990, 49990]:
             dias = 365
-        elif valor_pago >= 19900:  # R$ 199,00 a R$ 398,00 (Semestral)
+        elif valor_pago in [19990, 24990]:
             dias = 180
+        elif valor_pago in [9990, 11990]:
+            dias = 90
+        elif valor_pago in [3990, 5990]:
+            dias = 30
             
         # Gera uma nova chave
         nova_chave = gerar_chave()
@@ -148,7 +159,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             dias_validade=dias,
             cnpj=cnpj_stripe if cnpj_stripe else None,
             nome_empresa=nome_empresa if nome_empresa else None,
-            telefone=telefone if telefone else None
+            telefone=telefone if telefone else None,
+            limite_empresas=limite
         )
         db.add(db_license)
         db.commit()
@@ -199,7 +211,8 @@ def verify_license(req: VerifyRequest, db: Session = Depends(get_db)):
         "status": "success",
         "license_key": db_license.license_key,
         "valid_until": db_license.data_expiracao.strftime("%Y-%m-%d"),
-        "cnpj": db_license.cnpj
+        "cnpj": db_license.cnpj,
+        "limite_empresas": db_license.limite_empresas
     }
 
 @app.post("/register_trial")

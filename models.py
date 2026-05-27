@@ -15,6 +15,7 @@ class License(Base):
     data_expiracao = Column(DateTime, nullable=True) # Será calculada na primeira ativação ou já na geração
     is_active = Column(Boolean, default=True)
     dias_validade = Column(Integer, default=30) # Quantos dias vale essa licença
+    limite_empresas = Column(Integer, default=5) # Quantidade máxima de empresas permitida
 
 class TrialCompany(Base):
     __tablename__ = "trial_companies"
