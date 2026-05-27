@@ -117,6 +117,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         email_cliente = session.get("customer_details", {}).get("email", "cliente@desconhecido.com")
         valor_pago = session.get("amount_total", 0) # Valor em centavos (ex: 39990 = R$ 399,90)
         
+        stripe_customer_id = session.get("customer", None)
+        stripe_subscription_id = session.get("subscription", None)
+        
         # Extrair dados de contato / custom fields do Stripe
         nome_empresa = session.get("customer_details", {}).get("name", "")
         telefone = session.get("customer_details", {}).get("phone", "")
@@ -162,13 +165,36 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             nome_empresa=nome_empresa if nome_empresa else None,
             telefone=telefone if telefone else None,
             limite_empresas=limite,
-            payment_status="Pago",
             parceiro="Venda Online",
-            comissao_percentual=0
+            comissao_percentual=0,
+            stripe_customer_id=stripe_customer_id,
+            stripe_subscription_id=stripe_subscription_id
         )
         db.add(db_license)
         db.commit()
         db.refresh(db_license)
+        
+        # Gera o primeiro pagamento
+        # Para simular a taxa do Stripe: 3.99% + 0.39 fixo (exemplo)
+        # Ex: 39.90 -> 3990. Taxa: (3990 * 0.0399) + 39 = 159 + 39 = 198 (R$ 1,98)
+        taxa = int(valor_pago * 0.0399) + 39
+        liq = valor_pago - taxa
+        
+        agora = datetime.utcnow()
+        mes_ref = f"{agora.month:02d}/{agora.year}"
+        
+        db_payment = models.Payment(
+            license_id=db_license.id,
+            data_pagamento=agora,
+            mes_referencia=mes_ref,
+            valor_bruto=valor_pago,
+            taxa_gateway=taxa,
+            valor_liquido=liq,
+            metodo="Stripe",
+            status="Pago"
+        )
+        db.add(db_payment)
+        db.commit()
         
         # Disparar e-mail para o cliente
         try:
@@ -177,6 +203,47 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             print(f"Erro ao disparar e-mail: {e}")
             
         print(f"[SUCESSO] Nova licenca gerada: {nova_chave} para {email_cliente}")
+
+    elif event.get("type") == "invoice.payment_succeeded":
+        invoice = event.get("data", {}).get("object", {})
+        
+        # O pagamento de uma fatura de assinatura
+        sub_id = invoice.get("subscription", None)
+        cust_id = invoice.get("customer", None)
+        valor_pago = invoice.get("amount_paid", 0)
+        
+        # O Stripe cobra as faturas iniciais E recorrentes aqui.
+        # Para evitar duplicar o primeiro pagamento (que já vem no checkout session), o Stripe indica
+        # billing_reason = "subscription_create" na primeira e "subscription_cycle" nas seguintes.
+        if invoice.get("billing_reason") == "subscription_cycle" and sub_id:
+            # Busca a licença correspondente no banco
+            db_license = db.query(models.License).filter(models.License.stripe_subscription_id == sub_id).first()
+            if db_license:
+                # Estender a expiração
+                if db_license.data_expiracao:
+                    db_license.data_expiracao = db_license.data_expiracao + timedelta(days=db_license.dias_validade)
+                else:
+                    db_license.data_expiracao = datetime.utcnow() + timedelta(days=db_license.dias_validade)
+                
+                # Criar pagamento
+                taxa = int(valor_pago * 0.0399) + 39
+                liq = valor_pago - taxa
+                agora = datetime.utcnow()
+                mes_ref = f"{agora.month:02d}/{agora.year}"
+                
+                db_payment = models.Payment(
+                    license_id=db_license.id,
+                    data_pagamento=agora,
+                    mes_referencia=mes_ref,
+                    valor_bruto=valor_pago,
+                    taxa_gateway=taxa,
+                    valor_liquido=liq,
+                    metodo="Stripe Recorrente",
+                    status="Pago"
+                )
+                db.add(db_payment)
+                db.commit()
+                print(f"[RENOVAÇÃO] Licença {db_license.license_key} renovada para {mes_ref}.")
 
     return Response(status_code=200)
 
