@@ -161,7 +161,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             cnpj=cnpj_stripe if cnpj_stripe else None,
             nome_empresa=nome_empresa if nome_empresa else None,
             telefone=telefone if telefone else None,
-            limite_empresas=limite
+            limite_empresas=limite,
+            payment_status="Pago",
+            parceiro="Venda Online",
+            comissao_percentual=0
         )
         db.add(db_license)
         db.commit()
