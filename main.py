@@ -154,14 +154,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             limite_docs = -1 # Ilimitado
             
         # Dias de validade
-        if valor_pago in [39990, 49990]:
-            dias = 365
-        elif valor_pago in [19990, 24990]:
-            dias = 180
-        elif valor_pago in [9990, 11990]:
+        # Como todos os novos planos são mensais, o padrão de dias já é 30.
+        # Mantido um fallback apenas caso haja faturamento legado ativo:
+        if valor_pago in [13470, 26970]: # Antigos trimestrais
             dias = 90
-        elif valor_pago in [3990, 5990]:
-            dias = 30
+        elif valor_pago in [23940, 47940]: # Antigos semestrais
+            dias = 180
+        elif valor_pago in [41880, 83880]: # Antigos anuais
+            dias = 365
             
         # Gera uma nova chave
         nova_chave = gerar_chave()
