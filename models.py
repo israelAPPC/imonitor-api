@@ -16,6 +16,9 @@ class License(Base):
     is_active = Column(Boolean, default=True)
     dias_validade = Column(Integer, default=30) # Quantos dias vale essa licença
     limite_empresas = Column(Integer, default=5) # Quantidade máxima de empresas permitida
+    limite_documentos = Column(Integer, default=500) # Limite mensal de documentos
+    documentos_baixados = Column(Integer, default=0) # Quantos foram baixados no mes
+    mes_referencia_downloads = Column(String, nullable=True) # Mês referência para o contador
     
     # Parcerias
     parceiro = Column(String, nullable=True) # Quem vendeu a licença

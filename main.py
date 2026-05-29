@@ -88,6 +88,11 @@ class VerifyRequest(BaseModel):
 class TrialRequest(BaseModel):
     cnpj: str
 
+class SyncRequest(BaseModel):
+    license_key: str
+    cnpj: str
+    quantidade: int
+
 @app.get("/")
 def read_root():
     return {"status": "ok", "message": "iMonitor API is running"}
@@ -137,11 +142,16 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
                 
         # Define limite e dias de validade com base no valor pago
         dias = 30
-        limite = 5
+        limite = 5 # Mantido por retrocompatibilidade com clientes antigos
+        limite_docs = 500 # Default 500 docs (29,90)
         
-        # Planos de 15 empresas
-        if valor_pago in [5990, 11990, 24990, 49990]:
-            limite = 15
+        # Planos Novos de Documentos
+        if valor_pago == 3990:
+            limite_docs = 1000
+        elif valor_pago == 5990:
+            limite_docs = 2000
+        elif valor_pago == 9990:
+            limite_docs = -1 # Ilimitado
             
         # Dias de validade
         if valor_pago in [39990, 49990]:
@@ -165,6 +175,9 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             nome_empresa=nome_empresa if nome_empresa else None,
             telefone=telefone if telefone else None,
             limite_empresas=limite,
+            limite_documentos=limite_docs,
+            documentos_baixados=0,
+            mes_referencia_downloads=datetime.utcnow().strftime("%Y-%m"),
             parceiro="Venda Online",
             comissao_percentual=0,
             stripe_customer_id=stripe_customer_id,
@@ -283,7 +296,42 @@ def verify_license(req: VerifyRequest, db: Session = Depends(get_db)):
         "license_key": db_license.license_key,
         "valid_until": db_license.data_expiracao.strftime("%Y-%m-%d"),
         "cnpj": db_license.cnpj,
-        "limite_empresas": db_license.limite_empresas
+        "limite_empresas": db_license.limite_empresas,
+        "limite_documentos": db_license.limite_documentos,
+        "documentos_baixados": db_license.documentos_baixados,
+        "mes_referencia_downloads": db_license.mes_referencia_downloads
+    }
+
+@app.post("/sync_downloads")
+def sync_downloads(req: SyncRequest, db: Session = Depends(get_db)):
+    """Endpoint chamado pelo app para incrementar os documentos baixados."""
+    cnpj_limpo = ''.join(filter(str.isdigit, req.cnpj))
+    chave_limpa = req.license_key.strip().upper()
+    
+    db_license = db.query(models.License).filter(models.License.license_key == chave_limpa).first()
+    
+    if not db_license or db_license.cnpj != cnpj_limpo:
+        raise HTTPException(status_code=404, detail="Licença não encontrada ou CNPJ não corresponde.")
+        
+    if not db_license.is_active:
+        raise HTTPException(status_code=403, detail="Licença revogada.")
+
+    mes_atual = datetime.utcnow().strftime("%Y-%m")
+    
+    if db_license.mes_referencia_downloads != mes_atual:
+        # Se virou o mês, o consumo dessa requisição já é do novo mês
+        db_license.documentos_baixados = req.quantidade
+        db_license.mes_referencia_downloads = mes_atual
+    else:
+        db_license.documentos_baixados = (db_license.documentos_baixados or 0) + req.quantidade
+        
+    db.commit()
+    db.refresh(db_license)
+    
+    return {
+        "status": "success",
+        "documentos_baixados": db_license.documentos_baixados,
+        "mes_referencia_downloads": db_license.mes_referencia_downloads
     }
 
 @app.post("/register_trial")
