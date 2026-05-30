@@ -128,12 +128,14 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         # Extrair dados de contato / custom fields do Stripe
         nome_empresa = session.get("customer_details", {}).get("name", "")
         telefone = session.get("customer_details", {}).get("phone", "")
-        cnpj_stripe = ""
+        
+        # O CNPJ pode vir do client_reference_id (injetado via link) ou dos custom_fields
+        cnpj_stripe = session.get("client_reference_id", "")
         
         for field in session.get("custom_fields", []):
             label = field.get("label", {}).get("custom", "").lower()
             val = field.get("text", {}).get("value", "")
-            if "cnpj" in label:
+            if "cnpj" in label and not cnpj_stripe:
                 cnpj_stripe = ''.join(filter(str.isdigit, val))
             elif "nome" in label or "empresa" in label:
                 nome_empresa = val
@@ -163,10 +165,17 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         elif valor_pago in [41880, 83880]: # Antigos anuais
             dias = 365
             
-        # VERIFICA SE O CNPJ JÁ EXISTE NO BANCO (Para upgrade automático)
+        # VERIFICA SE JÁ EXISTE NO BANCO (Para upgrade automático)
         db_license = None
         if cnpj_stripe:
             db_license = db.query(models.License).filter(models.License.cnpj == cnpj_stripe).first()
+            
+        # Fallback: Se não encontrou por CNPJ, tenta pelo e-mail
+        if not db_license and email_cliente and email_cliente != "cliente@desconhecido.com":
+            db_license = db.query(models.License).filter(models.License.email_cliente == email_cliente).first()
+            if db_license and not db_license.cnpj and cnpj_stripe:
+                # Aproveita para salvar o CNPJ que estava faltando
+                db_license.cnpj = cnpj_stripe
 
         agora = datetime.utcnow()
         mes_ref = f"{agora.month:02d}/{agora.year}"
