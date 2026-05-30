@@ -16,9 +16,6 @@ class License(Base):
     is_active = Column(Boolean, default=True)
     dias_validade = Column(Integer, default=30) # Quantos dias vale essa licença
     limite_empresas = Column(Integer, default=5) # Quantidade máxima de empresas permitida
-    limite_documentos = Column(Integer, default=500) # Limite mensal de documentos
-    documentos_baixados = Column(Integer, default=0) # Quantos foram baixados no mes
-    mes_referencia_downloads = Column(String, nullable=True) # Mês referência para o contador
     
     # Parcerias
     parceiro = Column(String, nullable=True) # Quem vendeu a licença
@@ -54,13 +51,3 @@ class TrialCompany(Base):
     id = Column(Integer, primary_key=True, index=True)
     cnpj = Column(String, unique=True, index=True)
     data_registro = Column(DateTime, default=datetime.utcnow)
-
-class LicenseUsageHistory(Base):
-    __tablename__ = "license_usage_history"
-
-    id = Column(Integer, primary_key=True, index=True)
-    license_id = Column(Integer, index=True)
-    mes_referencia = Column(String, index=True)
-    quantidade_baixada = Column(Integer, default=0)
-    data_ultima_atualizacao = Column(DateTime, default=datetime.utcnow)
-
