@@ -54,3 +54,13 @@ class TrialCompany(Base):
     id = Column(Integer, primary_key=True, index=True)
     cnpj = Column(String, unique=True, index=True)
     data_registro = Column(DateTime, default=datetime.utcnow)
+
+class LicenseUsageHistory(Base):
+    __tablename__ = "license_usage_history"
+
+    id = Column(Integer, primary_key=True, index=True)
+    license_id = Column(Integer, index=True)
+    mes_referencia = Column(String, index=True)
+    quantidade_baixada = Column(Integer, default=0)
+    data_ultima_atualizacao = Column(DateTime, default=datetime.utcnow)
+

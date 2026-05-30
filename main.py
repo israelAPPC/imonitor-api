@@ -163,29 +163,58 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         elif valor_pago in [41880, 83880]: # Antigos anuais
             dias = 365
             
-        # Gera uma nova chave
-        nova_chave = gerar_chave()
+        # VERIFICA SE O CNPJ JÁ EXISTE NO BANCO (Para upgrade automático)
+        db_license = None
+        if cnpj_stripe:
+            db_license = db.query(models.License).filter(models.License.cnpj == cnpj_stripe).first()
+
+        agora = datetime.utcnow()
+        mes_ref = f"{agora.month:02d}/{agora.year}"
         
-        # Salva no banco de dados
-        db_license = models.License(
-            license_key=nova_chave,
-            email_cliente=email_cliente,
-            dias_validade=dias,
-            cnpj=cnpj_stripe if cnpj_stripe else None,
-            nome_empresa=nome_empresa if nome_empresa else None,
-            telefone=telefone if telefone else None,
-            limite_empresas=limite,
-            limite_documentos=limite_docs,
-            documentos_baixados=0,
-            mes_referencia_downloads=datetime.utcnow().strftime("%Y-%m"),
-            parceiro="Venda Online",
-            comissao_percentual=0,
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=stripe_subscription_id
-        )
-        db.add(db_license)
-        db.commit()
-        db.refresh(db_license)
+        if db_license:
+            # UPGRADE: Atualiza a licença existente
+            db_license.limite_documentos = limite_docs
+            db_license.limite_empresas = limite
+            
+            # Se não expirou, soma os dias à data de validade atual. Se já expirou, a partir de hoje.
+            if db_license.data_expiracao and db_license.data_expiracao > agora:
+                db_license.data_expiracao = db_license.data_expiracao + timedelta(days=dias)
+            else:
+                db_license.data_expiracao = agora + timedelta(days=dias)
+                
+            db_license.stripe_customer_id = stripe_customer_id
+            db_license.stripe_subscription_id = stripe_subscription_id
+            
+            if email_cliente != "cliente@desconhecido.com":
+                db_license.email_cliente = email_cliente
+            if telefone:
+                db_license.telefone = telefone
+                
+            nova_chave = db_license.license_key
+            db.commit()
+            db.refresh(db_license)
+        else:
+            # NOVA COMPRA: Gera chave e salva
+            nova_chave = gerar_chave()
+            db_license = models.License(
+                license_key=nova_chave,
+                email_cliente=email_cliente,
+                dias_validade=dias,
+                cnpj=cnpj_stripe if cnpj_stripe else None,
+                nome_empresa=nome_empresa if nome_empresa else None,
+                telefone=telefone if telefone else None,
+                limite_empresas=limite,
+                limite_documentos=limite_docs,
+                documentos_baixados=0,
+                mes_referencia_downloads=mes_ref,
+                parceiro="Venda Online",
+                comissao_percentual=0,
+                stripe_customer_id=stripe_customer_id,
+                stripe_subscription_id=stripe_subscription_id
+            )
+            db.add(db_license)
+            db.commit()
+            db.refresh(db_license)
         
         # Gera o primeiro pagamento
         # Para simular a taxa do Stripe: 3.99% + 0.39 fixo (exemplo)
@@ -324,6 +353,24 @@ def sync_downloads(req: SyncRequest, db: Session = Depends(get_db)):
         db_license.mes_referencia_downloads = mes_atual
     else:
         db_license.documentos_baixados = (db_license.documentos_baixados or 0) + req.quantidade
+        
+    # Atualiza a tabela de histórico de uso
+    db_history = db.query(models.LicenseUsageHistory).filter(
+        models.LicenseUsageHistory.license_id == db_license.id,
+        models.LicenseUsageHistory.mes_referencia == mes_atual
+    ).first()
+    
+    if db_history:
+        db_history.quantidade_baixada = db_license.documentos_baixados
+        db_history.data_ultima_atualizacao = datetime.utcnow()
+    else:
+        novo_historico = models.LicenseUsageHistory(
+            license_id=db_license.id,
+            mes_referencia=mes_atual,
+            quantidade_baixada=db_license.documentos_baixados,
+            data_ultima_atualizacao=datetime.utcnow()
+        )
+        db.add(novo_historico)
         
     db.commit()
     db.refresh(db_license)
