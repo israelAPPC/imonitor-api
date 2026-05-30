@@ -135,23 +135,41 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             elif "telefone" in label or "celular" in label:
                 telefone = val
                 
-        # Define limite e dias de validade com base no valor pago
+        # Define limite e dias de validade
         dias = 30
-        limite = 5
+        limite = 1
         
-        # Planos de 15 empresas
-        if valor_pago in [5990, 11990, 24990, 49990]:
-            limite = 15
-            
-        # Dias de validade
-        if valor_pago in [39990, 49990]:
-            dias = 365
-        elif valor_pago in [19990, 24990]:
-            dias = 180
-        elif valor_pago in [9990, 11990]:
-            dias = 90
-        elif valor_pago in [3990, 5990]:
-            dias = 30
+        # Mapeamento automático pelo valor pago (mensal)
+        if valor_pago == 2990:
+            limite = 1
+        elif valor_pago == 3990:
+            limite = 3
+        elif valor_pago == 5990:
+            limite = 5
+        elif valor_pago >= 9990:
+            limite = 10
+            extras = valor_pago - 9990
+            if extras > 0:
+                limite += (extras // 590) # +1 CNPJ a cada R$ 5,90 extras
+                
+        # Leitura dos Metadados do Stripe (Conforme sua configuração no Dashboard)
+        try:
+            session_id = session.get("id")
+            if session_id and stripe.api_key and "simulacao" not in stripe.api_key:
+                line_items = stripe.checkout.Session.list_line_items(session_id)
+                if line_items and line_items.data:
+                    price_obj = stripe.Price.retrieve(line_items.data[0].price.id)
+                    meta_limite = price_obj.metadata.get("limite_empresas")
+                    if meta_limite:
+                        base_limite = int(meta_limite)
+                        quantidade = line_items.data[0].quantity or 1
+                        # Se for um preço com quantidade configurada para extras:
+                        if base_limite == 10 and quantidade > 1:
+                            limite = base_limite + (quantidade - 1)
+                        else:
+                            limite = base_limite
+        except Exception as e:
+            print(f"Aviso: Não foi possível buscar metadata do Stripe, usando cálculo por valor: {e}")
             
         # Gera uma nova chave
         nova_chave = gerar_chave()
