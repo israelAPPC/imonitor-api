@@ -171,26 +171,61 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         except Exception as e:
             print(f"Aviso: Não foi possível buscar metadata do Stripe, usando cálculo por valor: {e}")
             
-        # Gera uma nova chave
-        nova_chave = gerar_chave()
+        # Verifica se é um Upgrade através do client_reference_id
+        client_ref = session.get("client_reference_id")
+        is_upgrade = False
+        db_license = None
         
-        # Salva no banco de dados
-        db_license = models.License(
-            license_key=nova_chave,
-            email_cliente=email_cliente,
-            dias_validade=dias,
-            cnpj=cnpj_stripe if cnpj_stripe else None,
-            nome_empresa=nome_empresa if nome_empresa else None,
-            telefone=telefone if telefone else None,
-            limite_empresas=limite,
-            parceiro="Venda Online",
-            comissao_percentual=0,
-            stripe_customer_id=stripe_customer_id,
-            stripe_subscription_id=stripe_subscription_id
-        )
-        db.add(db_license)
-        db.commit()
-        db.refresh(db_license)
+        if client_ref and client_ref.startswith("IMONITOR-"):
+            db_license = db.query(models.License).filter(models.License.license_key == client_ref).first()
+            
+        if db_license:
+            is_upgrade = True
+            nova_chave = db_license.license_key
+            
+            # Lógica de limite: Se for um "Adicional" (valor baixo), soma. Se for plano (29,90+), substitui/pega o maior.
+            if valor_pago < 2990 and limite == 1:
+                db_license.limite_empresas += 1
+            else:
+                db_license.limite_empresas = max(db_license.limite_empresas, limite)
+                
+            # Cancela a assinatura antiga no Stripe para não ter cobrança dupla
+            old_sub = db_license.stripe_subscription_id
+            if old_sub and old_sub != stripe_subscription_id:
+                try:
+                    if stripe.api_key and "simulacao" not in stripe.api_key:
+                        stripe.Subscription.delete(old_sub)
+                except Exception as e:
+                    print(f"Erro cancelando sub antiga: {e}")
+                    
+            db_license.stripe_subscription_id = stripe_subscription_id
+            if db_license.data_expiracao:
+                db_license.data_expiracao = db_license.data_expiracao + timedelta(days=dias)
+            db.commit()
+            db.refresh(db_license)
+            print(f"[UPGRADE] Licença {nova_chave} atualizada com sucesso.")
+        else:
+            # Gera uma nova chave
+            nova_chave = gerar_chave()
+            
+            # Salva no banco de dados
+            db_license = models.License(
+                license_key=nova_chave,
+                email_cliente=email_cliente,
+                dias_validade=dias,
+                cnpj=cnpj_stripe if cnpj_stripe else None,
+                nome_empresa=nome_empresa if nome_empresa else None,
+                telefone=telefone if telefone else None,
+                limite_empresas=limite,
+                parceiro="Venda Online",
+                comissao_percentual=0,
+                stripe_customer_id=stripe_customer_id,
+                stripe_subscription_id=stripe_subscription_id
+            )
+            db.add(db_license)
+            db.commit()
+            db.refresh(db_license)
+            print(f"[SUCESSO] Nova licenca gerada: {nova_chave} para {email_cliente}")
         
         # Gera o primeiro pagamento
         # Para simular a taxa do Stripe: 3.99% + 0.39 fixo (exemplo)
@@ -208,19 +243,18 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             valor_bruto=valor_pago,
             taxa_gateway=taxa,
             valor_liquido=liq,
-            metodo="Stripe",
+            metodo="Stripe Upgrade" if is_upgrade else "Stripe",
             status="Pago"
         )
         db.add(db_payment)
         db.commit()
         
-        # Disparar e-mail para o cliente
-        try:
-            enviar_email_licenca(email_cliente, nova_chave, dias)
-        except Exception as e:
-            print(f"Erro ao disparar e-mail: {e}")
-            
-        print(f"[SUCESSO] Nova licenca gerada: {nova_chave} para {email_cliente}")
+        # Disparar e-mail para o cliente (só para novas licenças)
+        if not is_upgrade:
+            try:
+                enviar_email_licenca(email_cliente, nova_chave, dias)
+            except Exception as e:
+                print(f"Erro ao disparar e-mail: {e}")
 
     elif event.get("type") == "invoice.payment_succeeded":
         invoice = event.get("data", {}).get("object", {})
