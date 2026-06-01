@@ -205,6 +205,13 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
             db.refresh(db_license)
             print(f"[UPGRADE] Licença {nova_chave} atualizada com sucesso.")
         else:
+            # Idempotency check: verifica se a assinatura já foi processada
+            if stripe_subscription_id:
+                existente = db.query(models.License).filter(models.License.stripe_subscription_id == stripe_subscription_id).first()
+                if existente:
+                    print(f"Assinatura {stripe_subscription_id} já processada na licença {existente.license_key}.")
+                    return Response(status_code=200)
+
             # Gera uma nova chave
             nova_chave = gerar_chave()
             
